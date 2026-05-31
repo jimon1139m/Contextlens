@@ -28,3 +28,4 @@ playwright-report/
 test-results/
 contextlens.zip
 debug-pw.mjs
+*.pem
