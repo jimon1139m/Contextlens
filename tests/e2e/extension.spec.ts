@@ -92,4 +92,86 @@ test.describe('ContextLens Extension E2E', () => {
     expect(background).toBeTruthy();
     expect(background.url()).toContain('service-worker.js');
   });
+
+  test('Intercepts and compresses prompt on ChatGPT', async ({ page }) => {
+    // Intercept network requests to chat.openai.com and serve mock HTML
+    await page.route('https://chat.openai.com/', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: `
+          <html>
+            <body>
+              <textarea id="prompt-textarea"></textarea>
+              <button data-testid="send-button">Send</button>
+              <div id="result"></div>
+              <script>
+                document.querySelector('[data-testid="send-button"]').addEventListener('click', () => {
+                  document.querySelector('#result').textContent = document.querySelector('#prompt-textarea').value;
+                });
+                document.addEventListener('keydown', (e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    setTimeout(() => {
+                      document.querySelector('#result').textContent = document.querySelector('#prompt-textarea').value;
+                    }, 200);
+                  }
+                }, true);
+              </script>
+            </body>
+          </html>
+        `
+      });
+    });
+
+    // Navigate to the matched domain
+    await page.goto('https://chat.openai.com/');
+
+    const textarea = page.locator('#prompt-textarea');
+    await textarea.fill('Hello    world, this is a prompt with    too many spaces.');
+    
+    // Press Enter to submit (which calls onSubmit adapter)
+    await textarea.press('Enter');
+
+    // Wait for the adapter to process and update DOM
+    await expect(page.locator('#result')).toHaveText('Hello world, this is a prompt with too many spaces.', { timeout: 10000 });
+  });
+
+  test('Intercepts and compresses prompt on Claude', async ({ page }) => {
+    // Intercept network requests to claude.ai and serve mock HTML
+    await page.route('https://claude.ai/', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: `
+          <html>
+            <body>
+              <div contenteditable="true" id="editor"></div>
+              <div id="result"></div>
+              <script>
+                document.addEventListener('keydown', (e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    document.querySelector('#result').textContent = document.querySelector('#editor').textContent;
+                  }
+                }, true);
+              </script>
+            </body>
+          </html>
+        `
+      });
+    });
+
+    // Navigate to Claude
+    await page.goto('https://claude.ai/');
+
+    const editor = page.locator('[contenteditable="true"]');
+    await editor.focus();
+    await editor.fill('Testing    Claude     interception   system.');
+    
+    // Press Enter
+    await editor.press('Enter');
+
+    // Verify optimized text
+    await expect(page.locator('#result')).toHaveText('Testing Claude interception system.', { timeout: 10000 });
+  });
 });
+
