@@ -64,13 +64,8 @@ export class GenericAdapter implements SiteAdapter {
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
-    document.addEventListener('keydown', async (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.shiftKey) return
+    const handleOptimization = async (e: Event) => {
       if (this.processing) return
-
-      const activeEl = document.activeElement
-      const input = this.getInput()
-      if (!input || !input.contains(activeEl as Node)) return
 
       const prompt = this.getPromptText()
       if (!prompt?.trim()) return
@@ -82,7 +77,11 @@ export class GenericAdapter implements SiteAdapter {
       this.processing = true
 
       try {
-        const optimized = await callback(prompt)
+        const optimized = await Promise.race([
+          callback(prompt),
+          new Promise<string>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+        ])
+
         if (optimized !== prompt) {
           this.setPromptText(optimized)
         }
@@ -98,6 +97,28 @@ export class GenericAdapter implements SiteAdapter {
           this.clickSendButton()
           this.processing = false
         }, 100)
+      }
+    }
+
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey) return
+      
+      const activeEl = document.activeElement
+      const input = this.getInput()
+      if (!input || !input.contains(activeEl as Node)) return
+
+      handleOptimization(e)
+    }, true)
+
+    document.addEventListener('mousedown', (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Generic check for things that look like a send button
+      const isSendButton = target.closest('button[type="submit"]') || 
+                           target.closest('button[aria-label*="end"]') || 
+                           target.closest('div[role="button"][aria-label*="end"]')
+                           
+      if (isSendButton) {
+        handleOptimization(e)
       }
     }, true)
   }

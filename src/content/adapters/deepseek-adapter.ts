@@ -82,13 +82,8 @@ export class DeepSeekAdapter implements SiteAdapter {
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
-    document.addEventListener('keydown', async (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.shiftKey) return
+    const handleOptimization = async (e: Event) => {
       if (this.processing) return
-
-      const textarea = document.querySelector('#chat-input, textarea')
-      const activeEl = document.activeElement
-      if (!textarea || activeEl !== textarea) return
 
       const prompt = this.getPromptText()
       if (!prompt?.trim()) return
@@ -101,7 +96,6 @@ export class DeepSeekAdapter implements SiteAdapter {
 
       try {
         console.log('[ContextLens] Intercepted prompt, optimizing...')
-        // 5-second timeout protection
         const optimized = await Promise.race([
           callback(prompt),
           new Promise<string>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
@@ -122,6 +116,45 @@ export class DeepSeekAdapter implements SiteAdapter {
           this.clickSendButton()
           this.processing = false
         }, 100)
+      }
+    }
+
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey) return
+      
+      const textarea = document.querySelector('#chat-input, textarea')
+      const activeEl = document.activeElement
+      if (!textarea || activeEl !== textarea) return
+
+      handleOptimization(e)
+    }, true)
+
+    document.addEventListener('mousedown', (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const selectors = [
+        'button[aria-label*="Send"]',
+        'button[aria-label*="send"]',
+        'div[aria-label*="Send"]',
+        'div[aria-label*="send"]',
+        '.ds-icon-button',
+        '#chat-input ~ button',
+        '.btn-primary',
+      ]
+      
+      const isSendButton = selectors.some(sel => target.closest(sel))
+      
+      let isHeuristic = false
+      if (!isSendButton) {
+        const textarea = document.querySelector('#chat-input, textarea') as HTMLElement
+        if (textarea && textarea.parentElement) {
+          if (textarea.parentElement.contains(target) && target.closest('div[role="button"], button, span[role="button"]')) {
+            isHeuristic = true
+          }
+        }
+      }
+
+      if (isSendButton || isHeuristic) {
+        handleOptimization(e)
       }
     }, true)
   }

@@ -45,13 +45,8 @@ export class GeminiAdapter implements SiteAdapter {
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
-    document.addEventListener('keydown', async (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.shiftKey) return
+    const handleOptimization = async (e: Event) => {
       if (this.processing) return
-
-      const editor = document.querySelector('.ql-editor, [contenteditable="true"]')
-      const activeEl = document.activeElement
-      if (!editor || !editor.contains(activeEl as Node)) return
 
       const prompt = this.getPromptText()
       if (!prompt?.trim()) return
@@ -63,7 +58,11 @@ export class GeminiAdapter implements SiteAdapter {
       this.processing = true
 
       try {
-        const optimized = await callback(prompt)
+        const optimized = await Promise.race([
+          callback(prompt),
+          new Promise<string>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+        ])
+        
         if (optimized !== prompt) {
           this.setPromptText(optimized)
         }
@@ -79,6 +78,30 @@ export class GeminiAdapter implements SiteAdapter {
           this.clickSendButton()
           this.processing = false
         }, 100)
+      }
+    }
+
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey) return
+      
+      const editor = document.querySelector('.ql-editor, [contenteditable="true"]')
+      const activeEl = document.activeElement
+      if (!editor || !editor.contains(activeEl as Node)) return
+
+      handleOptimization(e)
+    }, true)
+
+    document.addEventListener('mousedown', (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const selectors = [
+        'button[aria-label*="Send"]',
+        'button[aria-label*="send"]',
+        '.send-button',
+        'button.send-button',
+      ]
+      
+      if (selectors.some(sel => target.closest(sel))) {
+        handleOptimization(e)
       }
     }, true)
   }

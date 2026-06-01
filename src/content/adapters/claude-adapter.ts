@@ -46,14 +46,8 @@ export class ClaudeAdapter implements SiteAdapter {
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
-    document.addEventListener('keydown', async (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.shiftKey) return
+    const handleOptimization = async (e: Event) => {
       if (this.processing) return
-
-      // Only intercept if focused on the editor
-      const activeEl = document.activeElement
-      const editor = document.querySelector('[contenteditable="true"]')
-      if (!editor || !editor.contains(activeEl as Node)) return
 
       const prompt = this.getPromptText()
       if (!prompt?.trim()) return
@@ -67,7 +61,6 @@ export class ClaudeAdapter implements SiteAdapter {
       try {
         console.log('[ContextLens] Intercepted prompt, optimizing...')
 
-        // Add timeout protection
         const optimized = await Promise.race([
           callback(prompt),
           new Promise<string>((_, reject) =>
@@ -90,6 +83,30 @@ export class ClaudeAdapter implements SiteAdapter {
           this.clickSendButton()
           this.processing = false
         }, 150)
+      }
+    }
+
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey) return
+      
+      const activeEl = document.activeElement
+      const editor = document.querySelector('[contenteditable="true"]')
+      if (!editor || !editor.contains(activeEl as Node)) return
+
+      handleOptimization(e)
+    }, true)
+
+    document.addEventListener('mousedown', (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const selectors = [
+        'button[aria-label="Send Message"]',
+        'button[aria-label="Send message"]',
+        'button[data-testid="send-button"]',
+        'fieldset button:last-of-type',
+      ]
+      
+      if (selectors.some(sel => target.closest(sel))) {
+        handleOptimization(e)
       }
     }, true)
   }

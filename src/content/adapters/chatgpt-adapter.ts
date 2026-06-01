@@ -97,15 +97,8 @@ export class ChatGPTAdapter implements SiteAdapter {
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
-    document.addEventListener('keydown', async (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || e.shiftKey) return
+    const handleOptimization = async (e: Event) => {
       if (this.processing) return
-
-      // Only intercept if focus is in the prompt area
-      const activeEl = document.activeElement
-      const promptEl = this.getEditor()
-      if (!promptEl) return
-      if (activeEl !== promptEl && !promptEl.contains(activeEl as Node)) return
 
       const prompt = this.getPromptText()
       if (!prompt?.trim()) return
@@ -119,7 +112,6 @@ export class ChatGPTAdapter implements SiteAdapter {
       try {
         console.log('[ContextLens] Intercepted prompt, optimizing...')
 
-        // Add timeout protection — don't hang forever
         const optimized = await Promise.race([
           callback(prompt),
           new Promise<string>((_, reject) =>
@@ -138,12 +130,51 @@ export class ChatGPTAdapter implements SiteAdapter {
         }, 150)
       } catch (err) {
         console.error('[ContextLens] Error during optimization:', err)
-        // On failure, restore original and send anyway
         this.setPromptText(prompt)
         setTimeout(() => {
           this.clickSendButton()
           this.processing = false
         }, 150)
+      }
+    }
+
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey) return
+      
+      const activeEl = document.activeElement
+      const promptEl = this.getEditor()
+      if (!promptEl) return
+      if (activeEl !== promptEl && !promptEl.contains(activeEl as Node)) return
+
+      handleOptimization(e)
+    }, true)
+
+    document.addEventListener('mousedown', (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const selectors = [
+        '[data-testid="send-button"]',
+        'button[aria-label="Send prompt"]',
+        'button[aria-label="Send"]',
+        'button[data-testid="composer-send-button"]',
+        'form button[type="submit"]',
+        '#composer-background button:last-of-type',
+      ]
+
+      const isSendButton = selectors.some(sel => target.closest(sel))
+      let isHeuristic = false
+
+      if (!isSendButton && target.closest('button')) {
+        const btn = target.closest('button') as HTMLButtonElement
+        if (btn.querySelector('svg') && !btn.disabled) {
+          const rect = btn.getBoundingClientRect()
+          if (rect.bottom > window.innerHeight - 200) {
+            isHeuristic = true
+          }
+        }
+      }
+
+      if (isSendButton || isHeuristic) {
+        handleOptimization(e)
       }
     }, true)
   }
