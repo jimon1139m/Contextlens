@@ -12,6 +12,8 @@ const FILLER_PATTERNS: RegExp[] = [
   /\bto\s+be\s+honest\b/gi,
   /\bas\s+I\s+mentioned\s+(earlier|before|previously)\b/gi,
   /\b(very|really|quite|rather|somewhat)\s+(very|really|quite|rather|somewhat)\b/gi,
+  /\b(please|kindly|could\s+you|can\s+you)\b/gi,
+  /\bi\s+(want|need)(\s+you)?\s+to\b/gi,
 ]
 
 // Redundant verbose openers
