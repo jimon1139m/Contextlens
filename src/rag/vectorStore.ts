@@ -4,6 +4,14 @@ const DB_NAME = 'ContextLensDB'
 const STORE_NAME = 'knowledge_chunks'
 const DB_VERSION = 1
 
+// Timeout wrapper to prevent IndexedDB from hanging the service worker
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ])
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
@@ -29,13 +37,19 @@ export async function saveChunk(chunk: KnowledgeChunk): Promise<void> {
 }
 
 export async function getAllChunks(): Promise<KnowledgeChunk[]> {
-  const db = await openDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly')
-    const req = tx.objectStore(STORE_NAME).getAll()
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
+  return withTimeout(
+    (async () => {
+      const db = await openDB()
+      return new Promise<KnowledgeChunk[]>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly')
+        const req = tx.objectStore(STORE_NAME).getAll()
+        req.onsuccess = () => resolve(req.result)
+        req.onerror = () => reject(req.error)
+      })
+    })(),
+    3000,
+    [] // Return empty array on timeout
+  )
 }
 
 export async function deleteChunk(id: string): Promise<void> {

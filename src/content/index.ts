@@ -18,6 +18,37 @@ const ADAPTERS: Record<string, () => SiteAdapter> = {
   'poe.com': () => new GenericAdapter(),
 }
 
+// Wrapper to send messages to background with timeout + retry
+function sendToBackground(message: { type: string; payload?: unknown }): Promise<{
+  optimizedPrompt?: string
+  originalTokens?: number
+  newTokens?: number
+  error?: string
+}> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      console.warn('[ContextLens] Background message timed out')
+      resolve({ error: 'timeout' })
+    }, 5000)
+
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        clearTimeout(timeout)
+        if (chrome.runtime.lastError) {
+          console.warn('[ContextLens] Runtime error:', chrome.runtime.lastError.message)
+          resolve({ error: chrome.runtime.lastError.message })
+          return
+        }
+        resolve(response ?? { error: 'no response' })
+      })
+    } catch (err) {
+      clearTimeout(timeout)
+      console.error('[ContextLens] sendMessage threw:', err)
+      resolve({ error: String(err) })
+    }
+  })
+}
+
 function init() {
   const hostname = window.location.hostname
   const adapterFactory = ADAPTERS[hostname]
@@ -28,8 +59,8 @@ function init() {
   adapter.onSubmit(async (prompt: string) => {
     try {
       console.log(`[ContextLens] Sending prompt to background (${prompt.length} chars)`)
-      
-      const response = await chrome.runtime.sendMessage({
+
+      const response = await sendToBackground({
         type: 'COMPRESS_PROMPT',
         payload: { prompt, hostname },
       })
@@ -55,5 +86,7 @@ function init() {
   })
 }
 
-// Run immediately since we use document_idle
-init()
+// Delay init slightly to ensure the page's own JS has fully loaded
+// This prevents race conditions with frameworks like React/Next.js
+setTimeout(init, 500)
+

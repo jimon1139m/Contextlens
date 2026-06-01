@@ -66,7 +66,14 @@ export class ClaudeAdapter implements SiteAdapter {
 
       try {
         console.log('[ContextLens] Intercepted prompt, optimizing...')
-        const optimized = await callback(prompt)
+
+        // Add timeout protection
+        const optimized = await Promise.race([
+          callback(prompt),
+          new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout')), 5000)
+          ),
+        ])
 
         if (optimized !== prompt) {
           this.setPromptText(optimized)
@@ -75,14 +82,14 @@ export class ClaudeAdapter implements SiteAdapter {
         setTimeout(() => {
           this.clickSendButton()
           this.processing = false
-        }, 100)
+        }, 150)
       } catch (err) {
         console.error('[ContextLens] Error during optimization:', err)
         this.setPromptText(prompt)
         setTimeout(() => {
           this.clickSendButton()
           this.processing = false
-        }, 100)
+        }, 150)
       }
     }, true)
   }

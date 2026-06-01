@@ -4,22 +4,36 @@ export class ChatGPTAdapter implements SiteAdapter {
   name = 'chatgpt'
   private processing = false
 
+  private getEditor(): HTMLElement | null {
+    // ChatGPT uses a ProseMirror contenteditable div — try multiple selectors
+    const selectors = [
+      '#prompt-textarea',
+      '[contenteditable="true"].ProseMirror',
+      'div[contenteditable="true"][id*="prompt"]',
+      'div[contenteditable="true"]',
+    ]
+    for (const sel of selectors) {
+      const el = document.querySelector(sel) as HTMLElement
+      if (el) return el
+    }
+    return null
+  }
+
   getPromptText(): string | null {
-    // ChatGPT uses a contenteditable div with id="prompt-textarea"
-    // It may also use a <textarea> in some versions
-    const el = document.querySelector('#prompt-textarea') as HTMLElement | HTMLTextAreaElement
+    const el = this.getEditor()
     if (!el) return null
     if (el instanceof HTMLTextAreaElement) {
-      return el.value
+      return el.value?.trim() || null
     }
-    // For contenteditable div, get the inner text
-    return el.innerText?.trim() ?? el.textContent?.trim() ?? ''
+    // For contenteditable, get the inner text
+    const text = el.innerText?.trim() ?? el.textContent?.trim() ?? ''
+    return text || null
   }
 
   setPromptText(text: string): void {
-    const el = document.querySelector('#prompt-textarea') as HTMLElement | HTMLTextAreaElement
+    const el = this.getEditor()
     if (!el) return
-    
+
     if (el instanceof HTMLTextAreaElement) {
       const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype, 'value'
@@ -29,16 +43,21 @@ export class ChatGPTAdapter implements SiteAdapter {
     } else {
       // For contenteditable ProseMirror editor
       el.focus()
-      
+
       // Select all existing content
       const range = document.createRange()
       range.selectNodeContents(el)
       const sel = window.getSelection()
       sel?.removeAllRanges()
       sel?.addRange(range)
-      
-      // Use execCommand to replace — this triggers ProseMirror's internal handlers
-      document.execCommand('insertText', false, text)
+
+      // Try execCommand first (works with ProseMirror event listeners)
+      const success = document.execCommand('insertText', false, text)
+      if (!success) {
+        // Fallback: direct innerHTML manipulation + synthetic input event
+        el.innerHTML = `<p>${text}</p>`
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+      }
     }
   }
 
@@ -48,8 +67,8 @@ export class ChatGPTAdapter implements SiteAdapter {
       '[data-testid="send-button"]',
       'button[aria-label="Send prompt"]',
       'button[aria-label="Send"]',
+      'button[data-testid="composer-send-button"]',
       'form button[type="submit"]',
-      // The send button is usually the last button inside the form area
       '#composer-background button:last-of-type',
     ]
 
@@ -61,27 +80,36 @@ export class ChatGPTAdapter implements SiteAdapter {
         return
       }
     }
+
+    // Last resort: find any visible button with an SVG arrow icon near the editor
+    const allButtons = document.querySelectorAll('button')
+    for (const btn of allButtons) {
+      if (btn.querySelector('svg') && !btn.disabled && btn.offsetParent !== null) {
+        const rect = btn.getBoundingClientRect()
+        if (rect.bottom > window.innerHeight - 200) {
+          btn.click()
+          console.log('[ContextLens] Clicked send button via heuristic')
+          return
+        }
+      }
+    }
     console.warn('[ContextLens] Could not find send button')
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
-    // Listen for Enter key press in capture phase
     document.addEventListener('keydown', async (e: KeyboardEvent) => {
-      // Only intercept Enter (not Shift+Enter for newlines)
       if (e.key !== 'Enter' || e.shiftKey) return
-      
-      // Don't intercept if we're already processing
       if (this.processing) return
 
-      // Only intercept if focus is in the prompt textarea
+      // Only intercept if focus is in the prompt area
       const activeEl = document.activeElement
-      const promptEl = document.querySelector('#prompt-textarea')
-      if (!promptEl || !promptEl.contains(activeEl as Node)) return
+      const promptEl = this.getEditor()
+      if (!promptEl) return
+      if (activeEl !== promptEl && !promptEl.contains(activeEl as Node)) return
 
       const prompt = this.getPromptText()
       if (!prompt?.trim()) return
 
-      // Block the original Enter from submitting
       e.preventDefault()
       e.stopPropagation()
       e.stopImmediatePropagation()
@@ -90,26 +118,32 @@ export class ChatGPTAdapter implements SiteAdapter {
 
       try {
         console.log('[ContextLens] Intercepted prompt, optimizing...')
-        const optimized = await callback(prompt)
-        
+
+        // Add timeout protection — don't hang forever
+        const optimized = await Promise.race([
+          callback(prompt),
+          new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout')), 5000)
+          ),
+        ])
+
         if (optimized !== prompt) {
           this.setPromptText(optimized)
           console.log('[ContextLens] Prompt optimized, sending...')
         }
 
-        // Wait a moment for the DOM to update, then click send
         setTimeout(() => {
           this.clickSendButton()
           this.processing = false
-        }, 100)
+        }, 150)
       } catch (err) {
         console.error('[ContextLens] Error during optimization:', err)
-        // If optimization fails, restore original and send
+        // On failure, restore original and send anyway
         this.setPromptText(prompt)
         setTimeout(() => {
           this.clickSendButton()
           this.processing = false
-        }, 100)
+        }, 150)
       }
     }, true)
   }
