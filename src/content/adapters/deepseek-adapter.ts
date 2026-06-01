@@ -1,84 +1,63 @@
 import type { SiteAdapter } from './base-adapter'
+import { simulateTextEntry, simulateSubmit } from '../utils/dom'
 
 export class DeepSeekAdapter implements SiteAdapter {
   name = 'deepseek'
   private processing = false
 
   getPromptText(): string | null {
-    const textarea = document.querySelector('#chat-input, textarea') as HTMLTextAreaElement
-    return textarea?.value?.trim() ?? null
+    const el = document.querySelector('#chat-input, [contenteditable="true"], textarea') as HTMLElement
+    if (!el) return null
+    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+      return el.value?.trim() ?? null
+    }
+    return el.textContent?.trim() ?? el.innerText?.trim() ?? null
   }
 
   setPromptText(text: string): void {
-    const textarea = document.querySelector('#chat-input, textarea') as HTMLTextAreaElement
-    if (!textarea) return
-    
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype, 'value'
-    )?.set
-    if (nativeInputValueSetter) {
-      nativeInputValueSetter.call(textarea, text)
-    } else {
-      textarea.value = text
-    }
-    textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    textarea.dispatchEvent(new Event('change', { bubbles: true }))
+    const el = document.querySelector('#chat-input, [contenteditable="true"], textarea') as HTMLElement
+    simulateTextEntry(el, text)
   }
 
   private clickSendButton(): void {
     const selectors = [
-      'button[aria-label*="Send"]',
-      'button[aria-label*="send"]',
       'div[aria-label*="Send"]',
       'div[aria-label*="send"]',
       '.ds-icon-button',
       '#chat-input ~ button',
+      '#chat-input ~ div[role="button"]',
       '.btn-primary',
     ]
 
+    let btn: HTMLElement | null = null
     for (const selector of selectors) {
-      const btn = document.querySelector(selector) as HTMLElement
-      if (btn && !btn.hasAttribute('disabled')) {
-        btn.click()
-        console.log('[ContextLens] Clicked send button via:', selector)
-        return
+      const found = document.querySelector(selector) as HTMLElement
+      if (found && !found.hasAttribute('disabled')) {
+        btn = found
+        break
       }
     }
 
-    // DeepSeek heuristic: Find buttons or clickable divs near the textarea
-    const textarea = document.querySelector('#chat-input, textarea') as HTMLElement
-    if (textarea) {
-      // Find a container that holds both textarea and the send button
-      let parent = textarea.parentElement
-      for (let i = 0; i < 3 && parent; i++) {
-        const clickableElements = Array.from(parent.querySelectorAll('div[role="button"], button, span[role="button"]')) as HTMLElement[]
-        const visibleElements = clickableElements.filter(el => el.offsetParent !== null && !el.hasAttribute('disabled'))
-        
-        if (visibleElements.length > 0) {
-          // The send button is typically the last clickable icon
-          const sendBtn = visibleElements[visibleElements.length - 1]
-          sendBtn.click()
-          console.log('[ContextLens] Clicked send button via proximity heuristic')
-          return
+    if (!btn) {
+      // DeepSeek heuristic: Find buttons or clickable divs near the textarea
+      const textarea = document.querySelector('#chat-input, [contenteditable="true"], textarea') as HTMLElement
+      if (textarea) {
+        let parent = textarea.parentElement
+        for (let i = 0; i < 3 && parent; i++) {
+          const clickableElements = Array.from(parent.querySelectorAll('div[role="button"], button, span[role="button"]')) as HTMLElement[]
+          const visibleElements = clickableElements.filter(el => el.offsetParent !== null && !el.hasAttribute('disabled'))
+          
+          if (visibleElements.length > 0) {
+            btn = visibleElements[visibleElements.length - 1]
+            break
+          }
+          parent = parent.parentElement
         }
-        parent = parent.parentElement
       }
     }
-
-    console.warn('[ContextLens] Could not find send button, falling back to Enter key')
     
-    // Fallback: Dispatch an Enter keydown event
-    if (textarea) {
-      const enterEvent = new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true
-      })
-      textarea.dispatchEvent(enterEvent)
-    }
+    const textarea = document.querySelector('#chat-input, [contenteditable="true"], textarea') as HTMLElement
+    simulateSubmit(btn, textarea)
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
@@ -120,16 +99,19 @@ export class DeepSeekAdapter implements SiteAdapter {
     }
 
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if ((e as any).__contextLensSimulated) return
       if (e.key !== 'Enter' || e.shiftKey) return
       
-      const textarea = document.querySelector('#chat-input, textarea')
+      const textarea = document.querySelector('#chat-input, [contenteditable="true"], textarea')
       const activeEl = document.activeElement
-      if (!textarea || activeEl !== textarea) return
+      if (!textarea || (activeEl !== textarea && !textarea.contains(activeEl as Node))) return
 
       handleOptimization(e)
     }, true)
 
-    document.addEventListener('mousedown', (e: MouseEvent) => {
+    const onMouseOrClick = (e: MouseEvent) => {
+      if ((e as any).__contextLensSimulated) return
+      
       const target = e.target as HTMLElement
       const selectors = [
         'button[aria-label*="Send"]',
@@ -138,6 +120,7 @@ export class DeepSeekAdapter implements SiteAdapter {
         'div[aria-label*="send"]',
         '.ds-icon-button',
         '#chat-input ~ button',
+        '#chat-input ~ div[role="button"]',
         '.btn-primary',
       ]
       
@@ -145,9 +128,9 @@ export class DeepSeekAdapter implements SiteAdapter {
       
       let isHeuristic = false
       if (!isSendButton) {
-        const textarea = document.querySelector('#chat-input, textarea') as HTMLElement
+        const textarea = document.querySelector('#chat-input, [contenteditable="true"], textarea') as HTMLElement
         if (textarea && textarea.parentElement) {
-          if (textarea.parentElement.contains(target) && target.closest('div[role="button"], button, span[role="button"]')) {
+          if (textarea.parentElement.contains(target) && target.closest('div[role="button"], button, span[role="button"], svg, path')) {
             isHeuristic = true
           }
         }
@@ -156,7 +139,10 @@ export class DeepSeekAdapter implements SiteAdapter {
       if (isSendButton || isHeuristic) {
         handleOptimization(e)
       }
-    }, true)
+    }
+
+    document.addEventListener('click', onMouseOrClick, true)
+    document.addEventListener('mousedown', onMouseOrClick, true)
   }
 
   destroy(): void {}

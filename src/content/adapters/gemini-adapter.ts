@@ -1,28 +1,19 @@
 import type { SiteAdapter } from './base-adapter'
+import { simulateTextEntry, simulateSubmit } from '../utils/dom'
 
 export class GeminiAdapter implements SiteAdapter {
   name = 'gemini'
   private processing = false
 
   getPromptText(): string | null {
-    // Gemini uses a rich text editor — try multiple selectors
     const editor = document.querySelector('.ql-editor, [contenteditable="true"]') as HTMLElement
-    return editor?.innerText?.trim() ?? null
+    return editor?.textContent?.trim() || null
   }
 
   setPromptText(text: string): void {
     const editor = document.querySelector('.ql-editor, [contenteditable="true"]') as HTMLElement
     if (!editor) return
-
-    editor.focus()
-
-    const range = document.createRange()
-    range.selectNodeContents(editor)
-    const sel = window.getSelection()
-    sel?.removeAllRanges()
-    sel?.addRange(range)
-
-    document.execCommand('insertText', false, text)
+    simulateTextEntry(editor, text)
   }
 
   private clickSendButton(): void {
@@ -33,15 +24,16 @@ export class GeminiAdapter implements SiteAdapter {
       'button.send-button',
     ]
 
+    let btn: HTMLElement | null = null
     for (const selector of selectors) {
-      const btn = document.querySelector(selector) as HTMLButtonElement
-      if (btn && !btn.disabled) {
-        btn.click()
-        console.log('[ContextLens] Clicked send button via:', selector)
-        return
+      const found = document.querySelector(selector) as HTMLElement
+      if (found && !found.hasAttribute('disabled')) {
+        btn = found
+        break
       }
     }
-    console.warn('[ContextLens] Could not find send button')
+    
+    simulateSubmit(btn, document.querySelector('.ql-editor, [contenteditable="true"]'))
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
@@ -82,6 +74,7 @@ export class GeminiAdapter implements SiteAdapter {
     }
 
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if ((e as any).__contextLensSimulated) return
       if (e.key !== 'Enter' || e.shiftKey) return
       
       const editor = document.querySelector('.ql-editor, [contenteditable="true"]')
@@ -91,7 +84,9 @@ export class GeminiAdapter implements SiteAdapter {
       handleOptimization(e)
     }, true)
 
-    document.addEventListener('mousedown', (e: MouseEvent) => {
+    const onMouseOrClick = (e: MouseEvent) => {
+      if ((e as any).__contextLensSimulated) return
+      
       const target = e.target as HTMLElement
       const selectors = [
         'button[aria-label*="Send"]',
@@ -103,7 +98,10 @@ export class GeminiAdapter implements SiteAdapter {
       if (selectors.some(sel => target.closest(sel))) {
         handleOptimization(e)
       }
-    }, true)
+    }
+
+    document.addEventListener('click', onMouseOrClick, true)
+    document.addEventListener('mousedown', onMouseOrClick, true)
   }
 
   destroy(): void {}

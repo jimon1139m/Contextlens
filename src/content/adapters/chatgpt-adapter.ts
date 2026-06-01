@@ -1,4 +1,5 @@
 import type { SiteAdapter } from './base-adapter'
+import { simulateTextEntry, simulateSubmit } from '../utils/dom'
 
 export class ChatGPTAdapter implements SiteAdapter {
   name = 'chatgpt'
@@ -33,36 +34,10 @@ export class ChatGPTAdapter implements SiteAdapter {
   setPromptText(text: string): void {
     const el = this.getEditor()
     if (!el) return
-
-    if (el instanceof HTMLTextAreaElement) {
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype, 'value'
-      )?.set
-      nativeInputValueSetter?.call(el, text)
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-    } else {
-      // For contenteditable ProseMirror editor
-      el.focus()
-
-      // Select all existing content
-      const range = document.createRange()
-      range.selectNodeContents(el)
-      const sel = window.getSelection()
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-
-      // Try execCommand first (works with ProseMirror event listeners)
-      const success = document.execCommand('insertText', false, text)
-      if (!success) {
-        // Fallback: direct innerHTML manipulation + synthetic input event
-        el.innerHTML = `<p>${text}</p>`
-        el.dispatchEvent(new Event('input', { bubbles: true }))
-      }
-    }
+    simulateTextEntry(el, text)
   }
 
   private clickSendButton(): void {
-    // Try multiple selectors — ChatGPT changes these frequently
     const selectors = [
       '[data-testid="send-button"]',
       'button[aria-label="Send prompt"]',
@@ -72,28 +47,28 @@ export class ChatGPTAdapter implements SiteAdapter {
       '#composer-background button:last-of-type',
     ]
 
+    let btn: HTMLElement | null = null
     for (const selector of selectors) {
-      const btn = document.querySelector(selector) as HTMLButtonElement
-      if (btn && !btn.disabled) {
-        btn.click()
-        console.log('[ContextLens] Clicked send button via:', selector)
-        return
+      const found = document.querySelector(selector) as HTMLElement
+      if (found && !found.hasAttribute('disabled')) {
+        btn = found
+        break
       }
     }
 
-    // Last resort: find any visible button with an SVG arrow icon near the editor
-    const allButtons = document.querySelectorAll('button')
-    for (const btn of allButtons) {
-      if (btn.querySelector('svg') && !btn.disabled && btn.offsetParent !== null) {
-        const rect = btn.getBoundingClientRect()
-        if (rect.bottom > window.innerHeight - 200) {
-          btn.click()
-          console.log('[ContextLens] Clicked send button via heuristic')
-          return
+    if (!btn) {
+      const allButtons = document.querySelectorAll('button')
+      for (const b of allButtons) {
+        if (b.querySelector('svg') && !b.hasAttribute('disabled') && b.offsetParent !== null) {
+          const rect = b.getBoundingClientRect()
+          if (rect.bottom > window.innerHeight - 200) {
+            btn = b
+            break
+          }
         }
       }
     }
-    console.warn('[ContextLens] Could not find send button')
+    simulateSubmit(btn, this.getEditor())
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
@@ -139,6 +114,7 @@ export class ChatGPTAdapter implements SiteAdapter {
     }
 
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if ((e as any).__contextLensSimulated) return
       if (e.key !== 'Enter' || e.shiftKey) return
       
       const activeEl = document.activeElement
@@ -149,7 +125,9 @@ export class ChatGPTAdapter implements SiteAdapter {
       handleOptimization(e)
     }, true)
 
-    document.addEventListener('mousedown', (e: MouseEvent) => {
+    const onMouseOrClick = (e: MouseEvent) => {
+      if ((e as any).__contextLensSimulated) return
+      
       const target = e.target as HTMLElement
       const selectors = [
         '[data-testid="send-button"]',
@@ -176,7 +154,10 @@ export class ChatGPTAdapter implements SiteAdapter {
       if (isSendButton || isHeuristic) {
         handleOptimization(e)
       }
-    }, true)
+    }
+
+    document.addEventListener('click', onMouseOrClick, true)
+    document.addEventListener('mousedown', onMouseOrClick, true)
   }
 
   destroy(): void {}

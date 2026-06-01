@@ -1,66 +1,43 @@
 import type { SiteAdapter } from './base-adapter'
+import { simulateTextEntry, simulateSubmit } from '../utils/dom'
 
 export class GenericAdapter implements SiteAdapter {
   name = 'generic'
   private processing = false
-  
+
   private getInput(): HTMLElement | null {
-    const active = document.activeElement
-    if (active && (active.tagName === 'TEXTAREA' || active.getAttribute('contenteditable') === 'true')) {
-        return active as HTMLElement
-    }
-    const inputs = document.querySelectorAll('textarea, [contenteditable="true"]')
-    return (inputs[inputs.length - 1] as HTMLElement) || null
+    // First try obvious textareas
+    const textarea = document.querySelector('textarea')
+    if (textarea) return textarea
+
+    // Then try contenteditable divs (common in modern editors like ProseMirror/Draft.js)
+    const contentEditable = document.querySelector('[contenteditable="true"]') as HTMLElement
+    if (contentEditable) return contentEditable
+
+    // Last resort: standard input (less likely for multiline prompts, but possible)
+    const input = document.querySelector('input[type="text"]')
+    return (input as HTMLElement) || null
   }
 
   getPromptText(): string | null {
-    const el = this.getInput()
-    if (!el) return null
-    if (el instanceof HTMLTextAreaElement) return el.value?.trim() ?? null
-    return el.innerText?.trim() ?? el.textContent?.trim() ?? null
+    const input = this.getInput()
+    if (!input) return null
+
+    if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) {
+      return input.value.trim()
+    }
+    return input.textContent?.trim() || null
   }
 
   setPromptText(text: string): void {
-    const el = this.getInput()
-    if (!el) return
-    
-    if (el instanceof HTMLTextAreaElement) {
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype, 'value'
-      )?.set
-      if (nativeInputValueSetter) {
-        nativeInputValueSetter.call(el, text)
-      } else {
-        el.value = text
-      }
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-      el.dispatchEvent(new Event('change', { bubbles: true }))
-    } else {
-      el.focus()
-      const range = document.createRange()
-      range.selectNodeContents(el)
-      const sel = window.getSelection()
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-      document.execCommand('insertText', false, text)
-    }
+    const input = this.getInput()
+    if (!input) return
+    simulateTextEntry(input, text)
   }
 
   private clickSendButton(): void {
-    const el = this.getInput()
-    if (!el) return
-    
-    // For generic platforms, dispatching Enter is the safest bet
-    console.log('[ContextLens] Dispatching Enter key to submit generic form')
-    const enterEvent = new KeyboardEvent('keydown', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true
-    })
-    el.dispatchEvent(enterEvent)
+    const btn = document.querySelector('button[type="submit"], button[aria-label*="end"], div[role="button"][aria-label*="end"]') as HTMLElement
+    simulateSubmit(btn, this.getInput())
   }
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
@@ -101,6 +78,7 @@ export class GenericAdapter implements SiteAdapter {
     }
 
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+      if ((e as any).__contextLensSimulated) return
       if (e.key !== 'Enter' || e.shiftKey) return
       
       const activeEl = document.activeElement
@@ -110,7 +88,9 @@ export class GenericAdapter implements SiteAdapter {
       handleOptimization(e)
     }, true)
 
-    document.addEventListener('mousedown', (e: MouseEvent) => {
+    const onMouseOrClick = (e: MouseEvent) => {
+      if ((e as any).__contextLensSimulated) return
+      
       const target = e.target as HTMLElement
       // Generic check for things that look like a send button
       const isSendButton = target.closest('button[type="submit"]') || 
@@ -120,7 +100,10 @@ export class GenericAdapter implements SiteAdapter {
       if (isSendButton) {
         handleOptimization(e)
       }
-    }, true)
+    }
+
+    document.addEventListener('click', onMouseOrClick, true)
+    document.addEventListener('mousedown', onMouseOrClick, true)
   }
 
   destroy(): void {}

@@ -4,6 +4,7 @@ import { GeminiAdapter } from './adapters/gemini-adapter'
 import { DeepSeekAdapter } from './adapters/deepseek-adapter'
 import { GenericAdapter } from './adapters/generic-adapter'
 import type { SiteAdapter } from './adapters/base-adapter'
+import { showContextLensToast } from './utils/dom'
 
 const ADAPTERS: Record<string, () => SiteAdapter> = {
   'claude.ai': () => new ClaudeAdapter(),
@@ -57,13 +58,28 @@ function init() {
   console.log(`[ContextLens] ✅ Loaded adapter for ${adapter.name} on ${hostname}`)
 
   adapter.onSubmit(async (prompt: string) => {
+    let removeToast: (() => void) | undefined;
     try {
       console.log(`[ContextLens] Sending prompt to background (${prompt.length} chars)`)
+      
+      // Determine the active text area if possible
+      let textarea = document.querySelector('textarea, [contenteditable="true"]') as HTMLElement;
+      if (adapter.name === 'deepseek') {
+        textarea = document.querySelector('#chat-input, [contenteditable="true"], textarea') as HTMLElement;
+      } else if (adapter.name === 'chatgpt') {
+        textarea = document.querySelector('#prompt-textarea, [contenteditable="true"].ProseMirror') as HTMLElement;
+      } else if (adapter.name === 'gemini') {
+        textarea = document.querySelector('.ql-editor, [contenteditable="true"]') as HTMLElement;
+      }
+      
+      removeToast = showContextLensToast(textarea, 'optimizing');
 
       const response = await sendToBackground({
         type: 'COMPRESS_PROMPT',
         payload: { prompt, hostname },
       })
+
+      if (removeToast) removeToast();
 
       if (response?.error) {
         console.error('[ContextLens] Background returned error:', response.error)
@@ -75,11 +91,13 @@ function init() {
         console.log(
           `[ContextLens] ✅ Optimized: ${response.originalTokens} → ${response.newTokens} tokens (saved ${saved})`
         )
+        showContextLensToast(textarea, 'success', saved);
         return response.optimizedPrompt
       }
 
       return prompt
     } catch (err) {
+      if (removeToast) removeToast();
       console.error('[ContextLens] Failed to communicate with background:', err)
       return prompt // Return original on failure
     }
