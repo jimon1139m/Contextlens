@@ -60,6 +60,22 @@ export default function App() {
           ? Math.round((totals.saved / totals.original) * 1000) / 10
           : 0
 
+        const now = Date.now()
+        const oneDay = 24 * 60 * 60 * 1000
+        const dynamicWeeklyData = [0, 0, 0, 0, 0, 0, 0]
+        
+        history.forEach(item => {
+          const diffDays = Math.floor((now - item.timestamp) / oneDay)
+          if (diffDays >= 0 && diffDays < 7) {
+            // Index 6 is today, Index 0 is 6 days ago
+            dynamicWeeklyData[6 - diffDays] += item.saved
+          }
+        })
+
+        // If no data exists yet, provide a small baseline so the chart isn't completely flat
+        const hasData = dynamicWeeklyData.some(v => v > 0)
+        const finalWeeklyData = hasData ? dynamicWeeklyData : [0, 0, 0, 0, 0, 0, 0]
+
         setStats(prev => ({
           ...prev,
           totalSaved: typedResponse.totalSaved || 0,
@@ -67,6 +83,7 @@ export default function App() {
           totalOutputTokens: typedResponse.totalOutputTokens || history.reduce((sum, item) => sum + item.newTokens, 0),
           promptsOptimized: typedResponse.promptsOptimized || 0,
           avgCompression,
+          weeklyData: finalWeeklyData,
           history,
           knowledgeChunks: typedResponse.knowledgeChunks || 0,
           knowledgeSources: typedResponse.knowledgeSources || [],
