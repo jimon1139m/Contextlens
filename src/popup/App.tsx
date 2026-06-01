@@ -128,7 +128,7 @@ export default function App() {
   ]
 
   return (
-    <div className="relative w-80 min-h-96 text-white font-sans flex flex-col shadow-2xl overflow-hidden bg-black">
+    <div className="relative w-full h-full min-h-[400px] text-white font-sans flex flex-col shadow-2xl overflow-hidden bg-black">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-brand-900 via-gray-900 to-black z-0"></div>
       <div className="absolute -top-24 -left-24 w-64 h-64 bg-neon-purple rounded-full mix-blend-screen filter blur-[80px] opacity-20 animate-blob"></div>
       <div className="absolute top-1/2 -right-24 w-64 h-64 bg-neon-blue rounded-full mix-blend-screen filter blur-[80px] opacity-20 animate-blob animation-delay-2000"></div>
