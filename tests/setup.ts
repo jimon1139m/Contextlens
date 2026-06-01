@@ -2,27 +2,33 @@ import '@testing-library/jest-dom/vitest'
 import { vi } from 'vitest'
 import 'fake-indexeddb/auto'
 
-// Mock Chrome Extension API
+type ChromeCallback = (value?: unknown) => void
+
+const mockStorageArea = {
+  get: vi.fn((_keys: string[] | string | null, cb?: ChromeCallback) => cb?.({})),
+  set: vi.fn((_items: Record<string, unknown>, cb?: () => void) => cb?.()),
+}
+
+// @ts-expect-error tests provide the extension API surface used by the app
 globalThis.chrome = {
-  // @ts-ignore
   storage: {
-    sync: {
-      get: vi.fn(),
-      set: vi.fn(),
-    },
-    local: {
-      get: vi.fn(),
-      set: vi.fn(),
+    sync: mockStorageArea,
+    local: mockStorageArea,
+    onChanged: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
     },
   },
-  // @ts-ignore
   runtime: {
-    sendMessage: vi.fn(),
+    sendMessage: vi.fn((_msg: unknown, cb?: ChromeCallback) => cb?.({})),
     onMessage: {
       addListener: vi.fn(),
     },
     onInstalled: {
       addListener: vi.fn(),
-    }
+    },
+  },
+  sidePanel: {
+    setPanelBehavior: vi.fn(() => Promise.resolve()),
   },
 }

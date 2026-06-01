@@ -21,7 +21,28 @@ export interface ExtensionSettings {
   compressionLevel: 'light' | 'medium' | 'aggressive'
 }
 
-export interface MessageToBackground {
-  type: 'COMPRESS_PROMPT' | 'ADD_KNOWLEDGE' | 'GET_STATS' | 'DELETE_KNOWLEDGE'
-  payload: any
+export type MessageToBackground =
+  | { type: 'COMPRESS_PROMPT'; payload: { prompt: string; hostname?: string } }
+  | { type: 'ADD_KNOWLEDGE'; payload: { text: string; source: string } }
+  | { type: 'GET_STATS'; payload?: undefined }
+  | { type: 'DELETE_KNOWLEDGE'; payload: { source: string } }
+
+export interface OptimizationHistoryItem {
+  timestamp: number
+  originalTokens: number
+  compressedTokens: number
+  newTokens: number
+  saved: number
+  platform?: string
+}
+
+export interface StatsResponse {
+  knowledgeChunks: number
+  knowledgeSources: string[]
+  totalSaved: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  promptsOptimized: number
+  history: OptimizationHistoryItem[]
+  platformTokens: Record<string, number>
 }

@@ -1,5 +1,12 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,15 +14,15 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Environment
 *.local
+.env
+.env.*
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
@@ -23,9 +30,22 @@ dist-ssr
 *.sln
 *.sw?
 
-# ContextLens custom ignores
+# Test artifacts
 playwright-report/
 test-results/
+
+# Packaged builds
 contextlens.zip
-debug-pw.mjs
+contextlens.crx
+
+# Security - never commit private keys
 *.pem
+key.pem
+
+# Debug scripts
+debug-pw.mjs
+
+# Internal dev docs (not needed in repo)
+memory-bank/
+skill.md
+ContextLens.md

@@ -7,9 +7,8 @@ import '@testing-library/jest-dom'
 describe('Popup App Component', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    
-    // Default mock response for chrome.storage.sync.get
-    // @ts-ignore
+
+    // @ts-expect-error chrome is provided by the test setup
     chrome.storage.sync.get.mockImplementation((keys, callback) => {
       callback({
         settings: {
@@ -18,15 +17,14 @@ describe('Popup App Component', () => {
           compressionEnabled: true,
           maxChunks: 3,
           compressionLevel: 'medium',
-        }
+        },
       })
     })
 
-    // Default mock response for chrome.runtime.sendMessage (for KnowledgeBase GET_STATS)
-    // @ts-ignore
+    // @ts-expect-error chrome is provided by the test setup
     chrome.runtime.sendMessage.mockImplementation((msg, callback) => {
       if (msg.type === 'GET_STATS' && callback) {
-        callback({ knowledgeChunks: 5 })
+        callback({ knowledgeChunks: 5, knowledgeSources: [], history: [] })
       }
     })
   })
@@ -39,14 +37,11 @@ describe('Popup App Component', () => {
 
   it('navigates to Knowledge Base tab and displays chunk count', async () => {
     render(<App />)
-    
+
     const user = userEvent.setup()
-    
-    // Click Knowledge Base tab
-    const knowledgeTab = screen.getByText('📚 Knowledge')
+    const knowledgeTab = screen.getByText('Knowledge')
     await user.click(knowledgeTab)
 
-    // Check if the mock returned 5 chunks
     expect(screen.getByText('5 chunks')).toBeInTheDocument()
   })
 })
