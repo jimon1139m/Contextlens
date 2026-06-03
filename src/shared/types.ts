@@ -34,15 +34,19 @@ export interface OptimizationHistoryItem {
   newTokens: number
   saved: number
   platform?: string
+  promptSummary?: string
 }
 
 export interface StatsResponse {
   knowledgeChunks: number
   knowledgeSources: string[]
+  sourceChunkCounts: Record<string, number>
   totalSaved: number
   totalInputTokens: number
   totalOutputTokens: number
   promptsOptimized: number
   history: OptimizationHistoryItem[]
   platformTokens: Record<string, number>
+  weeklyStats: Record<string, number>
+  trend: number
 }

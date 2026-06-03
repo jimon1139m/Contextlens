@@ -3,6 +3,7 @@ import Stats from './components/Stats'
 import KnowledgeBase from './components/KnowledgeBase'
 import Settings from './components/Settings'
 import type { ExtensionSettings, OptimizationHistoryItem, StatsResponse } from '../shared/types'
+import { BarChart3, BookOpen, Settings2 } from 'lucide-react'
 import '../styles/globals.css'
 
 const defaultSettings: ExtensionSettings = {
@@ -25,7 +26,9 @@ interface PopupStats {
   history: OptimizationHistoryItem[]
   knowledgeChunks: number
   knowledgeSources: string[]
+  sourceChunkCounts: Record<string, number>
   platformTokens: Record<string, number>
+  trend: number
 }
 
 export default function App() {
@@ -37,57 +40,67 @@ export default function App() {
     totalOutputTokens: 0,
     promptsOptimized: 0,
     avgCompression: 0,
-    weeklyData: [10, 45, 30, 80, 50, 20, 90],
+    weeklyData: [0, 0, 0, 0, 0, 0, 0],
     history: [],
     knowledgeChunks: 0,
     knowledgeSources: [],
+    sourceChunkCounts: {},
     platformTokens: {},
+    trend: 0,
   })
 
   const loadStats = useCallback(() => {
     chrome.runtime?.sendMessage({ type: 'GET_STATS' }, (response: StatsResponse | { error?: string }) => {
       if (response && !('error' in response && response.error)) {
         const typedResponse = response as StatsResponse
-        const history = typedResponse.history || []
-        const totals = history.reduce(
-          (acc, item) => ({
-            original: acc.original + item.originalTokens,
-            saved: acc.saved + item.saved,
-          }),
-          { original: 0, saved: 0 }
-        )
-        const avgCompression = totals.original > 0
-          ? Math.round((totals.saved / totals.original) * 1000) / 10
+        const totalSaved = typedResponse.totalSaved || 0
+        const totalInput = typedResponse.totalInputTokens || 0
+        const totalOutput = typedResponse.totalOutputTokens || 0
+
+        const avgCompression = totalInput > 0
+          ? Math.round((totalSaved / totalInput) * 1000) / 10
           : 0
 
-        const now = Date.now()
-        const oneDay = 24 * 60 * 60 * 1000
-        const dynamicWeeklyData = [0, 0, 0, 0, 0, 0, 0]
+        const now = new Date()
+        const dayOfWeek = now.getDay()
+        const jsDayToMonSun = dayOfWeek === 0 ? 6 : dayOfWeek - 1
         
-        history.forEach(item => {
-          const diffDays = Math.floor((now - item.timestamp) / oneDay)
-          if (diffDays >= 0 && diffDays < 7) {
-            // Index 6 is today, Index 0 is 6 days ago
-            dynamicWeeklyData[6 - diffDays] += item.saved
-          }
-        })
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+        const startOfThisWeek = startOfToday - (jsDayToMonSun * 24 * 60 * 60 * 1000)
+        const oneDay = 24 * 60 * 60 * 1000
 
-        // If no data exists yet, provide a small baseline so the chart isn't completely flat
+        const dynamicWeeklyData = [0, 0, 0, 0, 0, 0, 0]
+        const wStats = typedResponse.weeklyStats || {}
+        
+        for (const [dateStr, savedTokens] of Object.entries(wStats)) {
+          const [year, month, day] = dateStr.split('-').map(Number)
+          const time = new Date(year, month - 1, day).getTime()
+          const diffMs = time - startOfThisWeek
+          if (diffMs >= 0 && diffMs < 7 * oneDay) {
+            const dayIndex = Math.floor(diffMs / oneDay)
+            if (dayIndex >= 0 && dayIndex < 7) {
+              dynamicWeeklyData[dayIndex] += savedTokens
+            }
+          }
+        }
+
         const hasData = dynamicWeeklyData.some(v => v > 0)
         const finalWeeklyData = hasData ? dynamicWeeklyData : [0, 0, 0, 0, 0, 0, 0]
 
         setStats(prev => ({
           ...prev,
-          totalSaved: typedResponse.totalSaved || 0,
-          totalInputTokens: typedResponse.totalInputTokens || totals.original,
-          totalOutputTokens: typedResponse.totalOutputTokens || history.reduce((sum, item) => sum + item.newTokens, 0),
+          totalSaved,
+          totalInputTokens: totalInput,
+          totalOutputTokens: totalOutput,
           promptsOptimized: typedResponse.promptsOptimized || 0,
           avgCompression,
           weeklyData: finalWeeklyData,
-          history,
+          history: typedResponse.history || [],
           knowledgeChunks: typedResponse.knowledgeChunks || 0,
           knowledgeSources: typedResponse.knowledgeSources || [],
+          sourceChunkCounts: typedResponse.sourceChunkCounts || {},
           platformTokens: typedResponse.platformTokens || {},
+          trend: typedResponse.trend || 0,
         }))
       }
     })
@@ -95,7 +108,11 @@ export default function App() {
 
   useEffect(() => {
     chrome.storage?.sync?.get(['settings'], (result: { settings?: ExtensionSettings }) => {
-      if (result.settings) setSettings(result.settings)
+      if (result.settings) {
+        setSettings({ ...defaultSettings, ...result.settings })
+      } else {
+        setSettings(defaultSettings)
+      }
     })
 
     loadStats()
@@ -107,9 +124,15 @@ export default function App() {
     }
 
     chrome.storage?.onChanged?.addListener(handleStorageChange)
+    
+    // Add interval polling as a robust fallback for Side Panel real-time updates
+    const interval = setInterval(() => {
+      loadStats()
+    }, 2000)
 
     return () => {
       chrome.storage?.onChanged?.removeListener(handleStorageChange)
+      clearInterval(interval)
     }
   }, [loadStats])
 
@@ -138,10 +161,10 @@ export default function App() {
     })
   }
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'stats', label: 'Stats' },
-    { id: 'knowledge', label: 'Knowledge' },
-    { id: 'settings', label: 'Settings' },
+  const tabs: { id: Tab; label: string; icon: typeof BarChart3 }[] = [
+    { id: 'stats', label: 'Stats', icon: BarChart3 },
+    { id: 'knowledge', label: 'Knowledge', icon: BookOpen },
+    { id: 'settings', label: 'Settings', icon: Settings2 },
   ]
 
   return (
@@ -162,22 +185,26 @@ export default function App() {
         </div>
 
         <div className="flex bg-black/40 border-b border-white/10 relative backdrop-blur-sm">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 py-3 text-xs font-semibold transition-all duration-300 relative ${
-                activeTab === tab.id
-                  ? 'text-white'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-              }`}
-            >
-              {tab.label}
-              {activeTab === tab.id && (
-                <div className="absolute bottom-0 left-0 w-full h-[2px] bg-gradient-to-r from-neon-purple to-neon-blue shadow-[0_0_10px_rgba(0,240,255,0.8)]"></div>
-              )}
-            </button>
-          ))}
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 py-3 text-xs font-semibold transition-all duration-300 relative flex items-center justify-center gap-1.5 ${
+                  activeTab === tab.id
+                    ? 'text-white'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                }`}
+              >
+                <Icon size={13} />
+                {tab.label}
+                {activeTab === tab.id && (
+                  <div className="absolute bottom-0 left-0 w-full h-[2px] bg-gradient-to-r from-neon-purple to-neon-blue shadow-[0_0_10px_rgba(0,240,255,0.8)]"></div>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         <div className="p-4 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
@@ -192,12 +219,14 @@ export default function App() {
                 weeklyData={stats.weeklyData}
                 history={stats.history}
                 platformTokens={stats.platformTokens}
+                trend={stats.trend}
               />
             )}
             {activeTab === 'knowledge' && (
               <KnowledgeBase
                 chunksCount={stats.knowledgeChunks}
                 sources={stats.knowledgeSources}
+                sourceChunkCounts={stats.sourceChunkCounts}
                 onRefresh={loadStats}
                 onAddKnowledge={addKnowledge}
               />

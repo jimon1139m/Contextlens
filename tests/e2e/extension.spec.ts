@@ -81,8 +81,8 @@ test.describe('ContextLens Extension E2E', () => {
     await expect(page.locator('text=Token Optimizer')).toBeVisible();
 
     // Verify tabs are present
-    await expect(page.locator('text=📚 Knowledge')).toBeVisible();
-    await expect(page.locator('text=⚙️ Settings')).toBeVisible();
+    await expect(page.locator('button:has-text("Knowledge")')).toBeVisible();
+    await expect(page.locator('button:has-text("Settings")')).toBeVisible();
   });
 
   test('Background worker initializes', async ({ context }) => {

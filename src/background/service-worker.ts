@@ -11,6 +11,7 @@ interface StoredStats {
   totalOutputTokens: number
   promptsOptimized: number
   platformTokens?: Record<string, number>
+  weeklyStats?: Record<string, number>
 }
 
 interface LocalStorageData {
@@ -42,6 +43,7 @@ const EMPTY_STATS: StoredStats = {
   totalOutputTokens: 0,
   promptsOptimized: 0,
   platformTokens: {},
+  weeklyStats: {},
 }
 
 function normalizeStats(stats?: Partial<StoredStats>): StoredStats {
@@ -51,6 +53,7 @@ function normalizeStats(stats?: Partial<StoredStats>): StoredStats {
     totalOutputTokens: stats?.totalOutputTokens ?? 0,
     promptsOptimized: stats?.promptsOptimized ?? 0,
     platformTokens: stats?.platformTokens ?? {},
+    weeklyStats: stats?.weeklyStats ?? {},
   }
 }
 
@@ -58,7 +61,7 @@ async function getSettings(): Promise<ExtensionSettings> {
   return new Promise((resolve) => {
     try {
       chrome.storage?.sync?.get(['settings'], (result: SyncStorageData) => {
-        resolve(result?.settings ?? DEFAULT_SETTINGS)
+        resolve({ ...DEFAULT_SETTINGS, ...(result?.settings ?? {}) })
       })
     } catch {
       resolve(DEFAULT_SETTINGS)
@@ -149,6 +152,7 @@ async function handleMessage(message: MessageToBackground) {
           newTokens,
           saved,
           platform,
+          promptSummary: message.payload.prompt.slice(0, 60).replace(/\s+/g, ' ').trim(),
         }
 
         const history = result?.history ?? []
@@ -156,6 +160,26 @@ async function handleMessage(message: MessageToBackground) {
 
         const newPlatformTokens = { ...(stats.platformTokens ?? {}) }
         newPlatformTokens[platform] = (newPlatformTokens[platform] || 0) + newTokens
+
+        // Update weekly stats in local timezone
+        const nowLocal = new Date()
+        const offset = nowLocal.getTimezoneOffset()
+        const localDate = new Date(nowLocal.getTime() - (offset * 60 * 1000))
+        const dateStr = localDate.toISOString().split('T')[0]
+        
+        const newWeeklyStats = { ...(stats.weeklyStats ?? {}) }
+        newWeeklyStats[dateStr] = (newWeeklyStats[dateStr] || 0) + saved
+
+        // Keep only last 30 days to prevent bloat
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+        for (const k of Object.keys(newWeeklyStats)) {
+          // Parse the date key as local time, not UTC
+          const [year, month, day] = k.split('-').map(Number)
+          const time = new Date(year, month - 1, day).getTime()
+          if (time < thirtyDaysAgo) {
+            delete newWeeklyStats[k]
+          }
+        }
 
         await new Promise<void>((resolve) => {
           chrome.storage.local.set({
@@ -165,6 +189,7 @@ async function handleMessage(message: MessageToBackground) {
               totalOutputTokens: stats.totalOutputTokens + newTokens,
               promptsOptimized: stats.promptsOptimized + 1,
               platformTokens: newPlatformTokens,
+              weeklyStats: newWeeklyStats,
             },
             history: newHistory,
           }, () => resolve())
@@ -216,15 +241,54 @@ async function handleMessage(message: MessageToBackground) {
         { input: 0, output: 0, saved: 0 }
       )
 
+      const sourceChunkCounts: Record<string, number> = {}
+      for (const chunk of allChunks) {
+        sourceChunkCounts[chunk.source] = (sourceChunkCounts[chunk.source] || 0) + 1
+      }
+
+      // Compute trend from weeklyStats
+      const now = new Date()
+      // JS getDay(): 0 = Sun, 1 = Mon... We want Mon=0, Sun=6
+      const dayOfWeek = now.getDay()
+      const jsDayToMonSun = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+      
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+      const startOfThisWeek = startOfToday - (jsDayToMonSun * 24 * 60 * 60 * 1000)
+      const startOfLastWeek = startOfThisWeek - (7 * 24 * 60 * 60 * 1000)
+
+      let thisWeekSum = 0
+      let lastWeekSum = 0
+
+      const wStats = stats.weeklyStats || {}
+      for (const [dateStr, savedTokens] of Object.entries(wStats)) {
+        const [year, month, day] = dateStr.split('-').map(Number)
+        const time = new Date(year, month - 1, day).getTime()
+        if (time >= startOfThisWeek) {
+          thisWeekSum += savedTokens
+        } else if (time >= startOfLastWeek && time < startOfThisWeek) {
+          lastWeekSum += savedTokens
+        }
+      }
+
+      let computedTrend = 0
+      if (lastWeekSum === 0) {
+        computedTrend = thisWeekSum > 0 ? 100 : 0
+      } else {
+        computedTrend = Math.round(((thisWeekSum - lastWeekSum) / lastWeekSum) * 100)
+      }
+
       return {
         knowledgeChunks: allChunks.length,
         knowledgeSources,
+        sourceChunkCounts,
         totalSaved: stats.totalSaved || historyTotals.saved,
         totalInputTokens: stats.totalInputTokens || historyTotals.input,
         totalOutputTokens: stats.totalOutputTokens || historyTotals.output,
         promptsOptimized: stats.promptsOptimized,
         history,
         platformTokens: stats.platformTokens || {},
+        weeklyStats: stats.weeklyStats || {},
+        trend: computedTrend,
       }
     }
 

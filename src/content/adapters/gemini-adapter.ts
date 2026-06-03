@@ -38,7 +38,12 @@ export class GeminiAdapter implements SiteAdapter {
 
   onSubmit(callback: (prompt: string) => Promise<string>): void {
     const handleOptimization = async (e: Event) => {
-      if (this.processing) return
+      if (this.processing) {
+        e.preventDefault()
+        e.stopPropagation()
+        e.stopImmediatePropagation()
+        return
+      }
 
       const prompt = this.getPromptText()
       if (!prompt?.trim()) return
@@ -84,7 +89,7 @@ export class GeminiAdapter implements SiteAdapter {
       handleOptimization(e)
     }, true)
 
-    const onMouseOrClick = (e: MouseEvent) => {
+    const onMouseOrClick = (e: Event) => {
       if ((e as any).__contextLensSimulated) return
       
       const target = e.target as HTMLElement
@@ -102,6 +107,7 @@ export class GeminiAdapter implements SiteAdapter {
 
     document.addEventListener('click', onMouseOrClick, true)
     document.addEventListener('mousedown', onMouseOrClick, true)
+    document.addEventListener('pointerdown', onMouseOrClick, true)
   }
 
   destroy(): void {}

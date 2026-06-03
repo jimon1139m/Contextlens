@@ -42,6 +42,6 @@ describe('Popup App Component', () => {
     const knowledgeTab = screen.getByText('Knowledge')
     await user.click(knowledgeTab)
 
-    expect(screen.getByText('5 chunks')).toBeInTheDocument()
+    expect(screen.getByText('5 chunks stored')).toBeInTheDocument()
   })
 })

@@ -35,35 +35,39 @@ export function simulateTextEntry(el: HTMLElement, text: string): boolean {
 export function simulateSubmit(btn: HTMLElement | null, textarea: HTMLElement | null): void {
   let btnClicked = false;
   if (btn && !btn.hasAttribute('disabled') && !btn.getAttribute('aria-disabled')) {
+    const pointerdown = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window });
     const mousedown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window });
+    const pointerup = new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window });
     const mouseup = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window });
     const click = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
     
     // We add a tiny property so our own handlers know to ignore it
+    ;(pointerdown as any).__contextLensSimulated = true;
+    ;(pointerup as any).__contextLensSimulated = true;
     ;(mousedown as any).__contextLensSimulated = true;
+    ;(mouseup as any).__contextLensSimulated = true;
     ;(click as any).__contextLensSimulated = true;
 
+    btn.dispatchEvent(pointerdown);
     btn.dispatchEvent(mousedown);
+    btn.dispatchEvent(pointerup);
     btn.dispatchEvent(mouseup);
     btn.dispatchEvent(click);
     btnClicked = true;
   }
 
-  // Always fallback to Enter just in case the button click fails
-  // But delay it slightly so it doesn't double-submit if the button worked
-  if (textarea) {
-    setTimeout(() => {
-      const enterEvent = new KeyboardEvent('keydown', {
-        key: 'Enter',
-        code: 'Enter',
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true
-      });
-      ;(enterEvent as any).__contextLensSimulated = true;
-      textarea.dispatchEvent(enterEvent);
-    }, btnClicked ? 100 : 0);
+  // Only fallback to Enter keypress if we couldn't click the send button
+  if (textarea && !btnClicked) {
+    const enterEvent = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true
+    });
+    ;(enterEvent as any).__contextLensSimulated = true;
+    textarea.dispatchEvent(enterEvent);
   }
 }
 
