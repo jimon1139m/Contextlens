@@ -381,8 +381,17 @@ Contributions are welcome! Here's how to get started:
 ---
 
 ## 📄 License
+## License
 
-This project is licensed under the MIT License — see the [LICENSE](./LICENSE) file for details.
+Copyright © 2026 Jimon1139m. All Rights Reserved.
+
+ContextLens is proprietary software. The source code is publicly visible
+for evaluation and educational/reference purposes, but copying,
+redistribution, modification, commercial use, or creation of derivative
+works is not permitted without prior written permission.
+
+See [LICENSE](./LICENSE) for the full license terms.
+.
 
 ---
 
